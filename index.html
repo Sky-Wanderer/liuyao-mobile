@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>六爻排盘</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="content">
+        <header class="page-title">
+          <h1>六爻排盘</h1>
+          <span>硬币起卦</span>
+        </header>
+
+        <div class="question-row">
+          <label for="question">占问</label>
+          <input id="question" type="text" placeholder="记录这次占问，例如：项目能否顺利推进" />
+        </div>
+
+        <section class="time-controls" aria-label="排盘时间">
+          <label>起卦时间<output id="startTime">未起卦</output></label>
+          <label>月建<output id="monthBranch">待定</output></label>
+          <label>日辰/日干<output id="dayInfo">待定</output></label>
+          <output id="dayBranch" hidden>丑</output>
+          <output id="dayStem" hidden>丁</output>
+        </section>
+
+        <section class="gua-heading">
+          <div>本卦：<strong id="primaryName">待排卦</strong><small id="primaryMeta">摇满六爻后生成</small></div>
+          <div>变卦：<strong id="changedName">待排卦</strong><small id="changedMeta">动爻变化后生成</small></div>
+        </section>
+
+        <section class="gua-board" aria-label="六爻排盘">
+          <div class="board-legend"><span>爻位</span><span>本卦</span><span>变卦</span><span>日月</span></div>
+          <div id="yaoBoard"></div>
+        </section>
+
+        <section class="roll-panel">
+          <div>
+            <p class="roll-title" id="rollTitle">准备开始摇卦</p>
+            <p class="roll-subtitle" id="rollSubtitle">六爻从初爻开始，由下往上记录</p>
+            <div class="coin-tray" id="coinTray" aria-label="硬币结果"><span>—</span><span>—</span><span>—</span><em>未摇</em></div>
+          </div>
+          <div class="roll-actions">
+            <button class="primary-button" id="rollButton" type="button">摇一爻</button>
+            <button class="secondary-button hidden" id="newButton" type="button">重新起卦</button>
+            <button class="tertiary-button" id="copyButton" type="button" disabled>复制卦例</button>
+          </div>
+        </section>
+
+        <section class="summary">
+          <p id="summaryLine">未起卦。先摇满六爻，再查看本卦、变卦、动爻及日月作用。</p>
+        </section>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
