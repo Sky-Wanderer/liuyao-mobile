@@ -56,6 +56,8 @@ const GUA_NAMES = {
   "011000": "风地观", "010000": "水地比", "001000": "山地剥", "000000": "坤为地"
 };
 
+const KEY_BY_GUA_NAME = Object.fromEntries(Object.entries(GUA_NAMES).map(([key, name]) => [name, key]));
+const SIX_RELATIVES = ["兄弟", "子孙", "妻财", "官鬼", "父母"];
 const PALACE_SETS = {
   乾: ["乾为天", "天风姤", "天山遯", "天地否", "风地观", "山地剥", "火地晋", "火天大有"],
   坎: ["坎为水", "水泽节", "水雷屯", "水火既济", "泽火革", "雷火丰", "地火明夷", "地水师"],
@@ -71,6 +73,9 @@ const PALACE_ELEMENTS = { 乾: "金", 兑: "金", 离: "火", 震: "木", 巽: "
 const POSITION_LABELS = ["初", "二", "三", "四", "五", "上"];
 const WORLD_BY_STAGE = [6, 1, 2, 3, 4, 5, 4, 3];
 const RESPONSE_BY_STAGE = [3, 4, 5, 6, 1, 2, 1, 6];
+const MONTH_OFFSET_FROM_YIN = { 寅: 0, 卯: 1, 辰: 2, 巳: 3, 午: 4, 未: 5, 申: 6, 酉: 7, 戌: 8, 亥: 9, 子: 10, 丑: 11 };
+const MONTH_START_STEM = { 甲: 2, 己: 2, 乙: 4, 庚: 4, 丙: 6, 辛: 6, 丁: 8, 壬: 8, 戊: 0, 癸: 0 };
+const HOUR_START_STEM = { 甲: 0, 己: 0, 乙: 2, 庚: 2, 丙: 4, 辛: 4, 丁: 6, 壬: 6, 戊: 8, 癸: 8 };
 
 const NA_JIA = {
   乾: {
@@ -129,31 +134,79 @@ function setOutputValue(id, value) {
   output.textContent = value;
 }
 
-function solarTermDay(year, termIndex) {
-  const termDate = new Date(31556925974.7 * (year - 1900) + SOLAR_TERM_INFO[termIndex] * 60000 + Date.UTC(1900, 0, 6, 2, 5));
-  return termDate.getUTCDate();
+function mod(value, size) {
+  return ((value % size) + size) % size;
+}
+
+function solarTermDate(year, termIndex) {
+  return new Date(31556925974.7 * (year - 1900) + SOLAR_TERM_INFO[termIndex] * 60000 + Date.UTC(1900, 0, 6, 2, 5));
 }
 
 function monthBranchFromDate(date) {
   const year = date.getFullYear();
-  const day = new Date(year, date.getMonth(), date.getDate());
   let branch = "子";
 
   for (const item of MONTH_BUILDERS) {
-    const boundary = new Date(year, Math.floor(item.term / 2), solarTermDay(year, item.term));
-    if (day >= boundary) branch = item.branch;
+    if (date >= solarTermDate(year, item.term)) branch = item.branch;
   }
 
   return branch;
+}
+
+function sexagenaryFromIndex(index) {
+  const normalized = mod(index, 60);
+  return {
+    stem: STEMS[normalized % 10],
+    branch: BRANCHES[normalized % 12]
+  };
+}
+
+function sexagenaryIndex(stem, branch) {
+  for (let index = 0; index < 60; index += 1) {
+    if (STEMS[index % 10] === stem && BRANCHES[index % 12] === branch) return index;
+  }
+  return 0;
+}
+
+function yearGanZhiFromDate(date) {
+  const gregorianYear = date.getFullYear();
+  const solarYear = date >= solarTermDate(gregorianYear, 2) ? gregorianYear : gregorianYear - 1;
+  return sexagenaryFromIndex(solarYear - 1984);
+}
+
+function monthGanZhiFromDate(date) {
+  const year = yearGanZhiFromDate(date);
+  const branch = monthBranchFromDate(date);
+  const startStem = MONTH_START_STEM[year.stem];
+  const offset = MONTH_OFFSET_FROM_YIN[branch];
+  return {
+    stem: STEMS[(startStem + offset) % 10],
+    branch
+  };
 }
 
 function dayGanZhiFromDate(date) {
   const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const base = new Date(2000, 0, 1);
   const diffDays = Math.round((day - base) / 86400000);
-  const stem = STEMS[((4 + diffDays) % 10 + 10) % 10];
-  const branch = BRANCHES[((6 + diffDays) % 12 + 12) % 12];
+  const stem = STEMS[mod(4 + diffDays, 10)];
+  const branch = BRANCHES[mod(6 + diffDays, 12)];
   return { stem, branch };
+}
+
+function hourGanZhiFromDate(date, dayStem) {
+  const branchIndex = Math.floor((date.getHours() + 1) / 2) % 12;
+  const startStem = HOUR_START_STEM[dayStem];
+  return {
+    stem: STEMS[(startStem + branchIndex) % 10],
+    branch: BRANCHES[branchIndex]
+  };
+}
+
+function emptyBranchesFromDay(day) {
+  const dayIndex = sexagenaryIndex(day.stem, day.branch);
+  const xunStart = dayIndex - (dayIndex % 10);
+  return [BRANCHES[(xunStart + 10) % 12], BRANCHES[(xunStart + 11) % 12]];
 }
 
 function formatDateTime(date) {
@@ -162,20 +215,40 @@ function formatDateTime(date) {
 }
 
 function applyTimeInfo(date) {
+  const year = yearGanZhiFromDate(date);
+  const month = monthGanZhiFromDate(date);
   const day = dayGanZhiFromDate(date);
+  const hour = hourGanZhiFromDate(date, day.stem);
+  const empties = emptyBranchesFromDay(day);
   setOutputValue("startTime", formatDateTime(date));
-  setOutputValue("monthBranch", monthBranchFromDate(date));
-  setOutputValue("dayInfo", `${day.branch} / ${day.stem}`);
+  setOutputValue("yearMonthInfo", `${year.stem}${year.branch}年 ${month.stem}${month.branch}月`);
+  setOutputValue("dayInfo", `${day.stem}${day.branch}日（${empties.join("")}空）`);
+  setOutputValue("hourInfo", `${hour.stem}${hour.branch}时`);
+  setOutputValue("yearStem", year.stem);
+  setOutputValue("yearBranch", year.branch);
+  setOutputValue("monthStem", month.stem);
+  setOutputValue("monthBranch", month.branch);
   setOutputValue("dayBranch", day.branch);
   setOutputValue("dayStem", day.stem);
+  setOutputValue("hourStem", hour.stem);
+  setOutputValue("hourBranch", hour.branch);
+  setOutputValue("emptyBranches", empties.join(""));
 }
 
 function resetTimeInfo() {
   setOutputValue("startTime", "未起卦");
-  setOutputValue("monthBranch", "待定");
+  setOutputValue("yearMonthInfo", "待定");
   setOutputValue("dayInfo", "待定");
-  setOutputValue("dayBranch", "丑");
-  setOutputValue("dayStem", "丁");
+  setOutputValue("hourInfo", "待定");
+  setOutputValue("yearStem", "甲");
+  setOutputValue("yearBranch", "子");
+  setOutputValue("monthStem", "丙");
+  setOutputValue("monthBranch", "寅");
+  setOutputValue("dayStem", "甲");
+  setOutputValue("dayBranch", "子");
+  setOutputValue("hourStem", "甲");
+  setOutputValue("hourBranch", "子");
+  setOutputValue("emptyBranches", "戌亥");
 }
 
 function isGenerating(elementA, elementB) {
@@ -191,6 +264,16 @@ function relationToSelf(palaceElement, yaoElement) {
   return "六亲";
 }
 
+function elementRelation(source, target) {
+  if (!source || !target) return "unknown";
+  if (source === target) return "same";
+  if (isGenerating(source, target)) return "generates";
+  if (CONTROLS[source] === target) return "controls";
+  if (isGenerating(target, source)) return "drains";
+  if (CONTROLS[target] === source) return "controlled_by";
+  return "neutral";
+}
+
 function elementAction(actorBranch, targetBranch, prefix) {
   const actor = ELEMENT_OF_BRANCH[actorBranch];
   const target = ELEMENT_OF_BRANCH[targetBranch];
@@ -198,13 +281,56 @@ function elementAction(actorBranch, targetBranch, prefix) {
 
   if (actorBranch === targetBranch) tags.push({ text: `${prefix}临`, tone: "good" });
   if (COMBINES[actorBranch] === targetBranch) tags.push({ text: `${prefix}合`, tone: "good" });
-  if (CLASHES[actorBranch] === targetBranch) tags.push({ text: `${prefix}冲`, tone: "hot" });
+  if (CLASHES[actorBranch] === targetBranch) tags.push({ text: prefix === "月" ? "月破" : `${prefix}冲`, tone: "hot" });
 
   if (actor === target) tags.push({ text: `${prefix}扶`, tone: "good" });
   else if (isGenerating(actor, target)) tags.push({ text: `${prefix}生`, tone: "good" });
   else if (CONTROLS[actor] === target) tags.push({ text: `${prefix}克`, tone: "hot" });
 
   return tags;
+}
+
+function dateContext() {
+  return {
+    monthBranch: $("#monthBranch").value,
+    dayBranch: $("#dayBranch").value,
+    emptyBranches: ($("#emptyBranches").value || "").split("").filter((branch) => BRANCHES.includes(branch))
+  };
+}
+
+function branchStatusTags(branch, context = dateContext()) {
+  const tags = [];
+  if (context.emptyBranches.includes(branch)) tags.push({ text: "旬空", tone: "hot" });
+  tags.push(...elementAction(context.monthBranch, branch, "月"));
+  tags.push(...elementAction(context.dayBranch, branch, "日"));
+  return tags;
+}
+
+function branchStatusText(branch, context = dateContext()) {
+  return branchStatusTags(branch, context).map((tag) => tag.text).filter((text, index, list) => list.indexOf(text) === index).join("、");
+}
+
+function transformStatusTags(primary, changed, context = dateContext()) {
+  const tags = [];
+  const relation = elementRelation(changed.element, primary.element);
+  if (relation === "generates") tags.push("化回头生");
+  else if (relation === "controls") tags.push("化回头克");
+  else if (relation === "same") tags.push("化比扶");
+  else if (relation === "drains") tags.push("化泄");
+  else if (relation === "controlled_by") tags.push("化受克");
+
+  if (changed.branch === primary.branch) tags.push("化伏吟");
+  if (CLASHES[changed.branch] === primary.branch) tags.push("化冲");
+  if (context.emptyBranches.includes(changed.branch)) tags.push("化空");
+
+  return tags;
+}
+
+function hexagramBond(rows) {
+  const pairs = [[0, 3], [1, 4], [2, 5]];
+  if (pairs.every(([lower, upper]) => COMBINES[rows[lower].branch] === rows[upper].branch)) return "六合";
+  if (pairs.every(([lower, upper]) => CLASHES[rows[lower].branch] === rows[upper].branch)) return "六冲";
+  return "";
 }
 
 function bitForYao(value, changed = false) {
@@ -251,6 +377,21 @@ function naJiaRows(key, palaceElement) {
       family: relationToSelf(palaceElement, element)
     };
   });
+}
+
+function hiddenRowsFor(primaryRows, primaryPalace) {
+  const presentFamilies = new Set(primaryRows.map((row) => row.family));
+  const missingFamilies = SIX_RELATIVES.filter((family) => !presentFamilies.has(family));
+  if (!missingFamilies.length) return primaryRows.map(() => null);
+
+  const homeName = PALACE_SETS[primaryPalace.palace][0];
+  const homeKey = KEY_BY_GUA_NAME[homeName];
+  const homeRows = naJiaRows(homeKey, primaryPalace.element);
+  return homeRows.map((row, index) => missingFamilies.includes(row.family) ? {
+    ...row,
+    lineIndex: index + 1,
+    flying: primaryRows[index]
+  } : null);
 }
 
 function rollYao() {
@@ -328,42 +469,92 @@ function renderNames() {
   const changedName = GUA_NAMES[changedKey] || "未知卦";
   const primaryPalace = palaceInfo(primaryName);
   const changedPalace = palaceInfo(changedName);
+  const primaryRows = naJiaRows(primaryKey, primaryPalace.element);
+  const changedRows = naJiaRows(changedKey, primaryPalace.element);
+  const primaryBond = hexagramBond(primaryRows);
+  const changedBond = hexagramBond(changedRows);
   const moving = state.yaos.map((value, index) => value === 6 || value === 9 ? POSITION_LABELS[index] : null).filter(Boolean);
 
   $("#primaryName").textContent = primaryName;
   $("#changedName").textContent = changedName;
-  $("#primaryMeta").textContent = `${primaryPalace.palace}宫${primaryPalace.element}｜${primaryPalace.label}`;
-  $("#changedMeta").textContent = `${changedPalace.palace}宫｜动爻：${moving.length ? moving.join("、") : "无"}`;
-  $("#summaryLine").textContent = `本卦 ${primaryName}，变卦 ${changedName}。日月信息取自第一次摇卦时间：${$("#startTime").value}。`;
+  $("#primaryMeta").textContent = `${primaryPalace.palace}宫${primaryPalace.element}｜${primaryPalace.label}${primaryBond ? `｜${primaryBond}` : ""}`;
+  $("#changedMeta").textContent = `${changedPalace.palace}宫${changedPalace.element}${changedBond ? `｜${changedBond}` : ""}｜动爻：${moving.length ? moving.join("、") : "无"}`;
+  $("#summaryLine").textContent = `本卦 ${primaryName}，变卦 ${changedName}。${$("#yearMonthInfo").value} ${$("#dayInfo").value}，起卦时间：${$("#startTime").value}。`;
 
-  return { primaryKey, changedKey, primaryPalace };
+  return { primaryKey, changedKey, primaryPalace, changedPalace, primaryRows, changedRows, primaryBond, changedBond };
 }
 
-function renderYaoCell(row, value, changed = false) {
+function renderYaoCell(row, value, changed = false, markers = []) {
   const mark = changed ? "" : changingMark(value);
+  const status = branchStatusText(row.branch);
+  const markerText = markers.length ? `｜${markers.join("")}` : "";
   return `
     <div class="gua-cell">
       <div class="line-wrap"><span class="${lineClass(value, changed)}"></span><span class="changing">${mark}</span></div>
       <div class="yao-text">
-        <strong>${row.family}${row.branch}${row.element}</strong>
-        <span>${row.stem}${row.branch}｜${yaoName(value)}</span>
+        <strong>${row.family}${row.branch}${row.element}${markerText}</strong>
+        <span>${row.stem}${row.branch}｜${changed ? "变爻" : yaoName(value)}${status ? `｜${status}` : ""}</span>
       </div>
     </div>
   `;
 }
 
+function renderHiddenCell(row) {
+  if (!row) return `<div class="hidden-cell"><strong>—</strong><span>无伏</span></div>`;
+  const status = branchStatusText(row.branch);
+  return `<div class="hidden-cell"><strong>${row.family}${row.branch}${row.element}</strong><span>${row.stem}${row.branch}伏${status ? `｜${status}` : ""}</span></div>`;
+}
+
 function renderRelations(branch) {
-  const monthTags = elementAction($("#monthBranch").value, branch, "月");
-  const dayTags = elementAction($("#dayBranch").value, branch, "日");
-  const tags = [...monthTags, ...dayTags];
+  const tags = branchStatusTags(branch);
   if (!tags.length) tags.push({ text: "无", tone: "neutral" });
-  return `<div class="relation">${tags.map((tag) => `<span class="tag ${tag.tone}">${tag.text}</span>`).join("")}</div>`;
+  const deduped = tags.filter((tag, index, list) => list.findIndex((item) => item.text === tag.text) === index);
+  return `<div class="relation">${deduped.map((tag) => `<span class="tag ${tag.tone}">${tag.text}</span>`).join("")}</div>`;
 }
 
 function lineText(value, changed = false) {
   const line = bitForYao(value, changed) ? "━━━" : "━　━";
   const mark = changed ? "" : changingMark(value);
   return `${line}${mark}`;
+}
+
+function lineMarkers(index, primaryPalace) {
+  const markers = [];
+  if (index + 1 === primaryPalace.world) markers.push("世");
+  if (index + 1 === primaryPalace.response) markers.push("应");
+  return markers;
+}
+
+function formatRowText(row, context = dateContext()) {
+  const status = branchStatusText(row.branch, context);
+  return `${row.family}${row.branch}${row.element}（${row.stem}${row.branch}${status ? `｜${status}` : ""}）`;
+}
+
+function formatHiddenText(row, context = dateContext()) {
+  if (!row) return "　";
+  return `${formatRowText(row, context)}伏`;
+}
+
+function describeHiddenRows(hiddenRows, context = dateContext()) {
+  const rows = hiddenRows.filter(Boolean);
+  if (!rows.length) return "无";
+  return rows.map((row) => {
+    const position = POSITION_LABELS[row.lineIndex - 1];
+    const flying = `${row.flying.family}${row.flying.branch}${row.flying.element}`;
+    return `${formatRowText(row, context)}伏于${position}爻${flying}下`;
+  }).join("；");
+}
+
+function describeMovingLines(primaryRows, changedRows, context = dateContext()) {
+  const details = state.yaos.map((value, index) => {
+    if (value !== 6 && value !== 9) return null;
+    const position = POSITION_LABELS[index];
+    const primary = primaryRows[index];
+    const changed = changedRows[index];
+    const transform = transformStatusTags(primary, changed, context).join("、") || "动变";
+    return `${position}爻${yaoName(value)}${changingMark(value)}：${primary.family}${primary.branch}${primary.element}化${changed.family}${changed.branch}${changed.element}（${transform}）`;
+  }).filter(Boolean);
+  return details.length ? details.join("；") : "无动爻";
 }
 
 function buildCaseText() {
@@ -377,27 +568,46 @@ function buildCaseText() {
   const changedPalace = palaceInfo(changedName);
   const primaryRows = naJiaRows(primaryKey, primaryPalace.element);
   const changedRows = naJiaRows(changedKey, primaryPalace.element);
+  const hiddenRows = hiddenRowsFor(primaryRows, primaryPalace);
+  const primaryBond = hexagramBond(primaryRows);
+  const changedBond = hexagramBond(changedRows);
   const spirits = SPIRIT_START[$("#dayStem").value];
   const moving = state.yaos.map((value, index) => value === 6 || value === 9 ? POSITION_LABELS[index] : null).filter(Boolean);
+  const context = dateContext();
   const question = $("#question").value.trim() || "未填写";
+  const yearGanZhi = `${$("#yearStem").value}${$("#yearBranch").value}`;
+  const monthGanZhi = `${$("#monthStem").value}${$("#monthBranch").value}`;
+  const dayGanZhi = `${$("#dayStem").value}${$("#dayBranch").value}`;
+  const hourGanZhi = `${$("#hourStem").value}${$("#hourBranch").value}`;
+  const emptyBranches = $("#emptyBranches").value;
+  const worldRow = primaryRows[primaryPalace.world - 1];
+  const responseRow = primaryRows[primaryPalace.response - 1];
 
   const lines = [
     "六爻卦例",
     `占问：${question}`,
     `起卦时间：${$("#startTime").value}`,
-    `月建：${$("#monthBranch").value}　日辰：${$("#dayBranch").value}　日干：${$("#dayStem").value}`,
-    `本卦：${primaryName}（${primaryPalace.palace}宫${primaryPalace.element}｜${primaryPalace.label}）`,
-    `变卦：${changedName}（${changedPalace.palace}宫｜动爻：${moving.length ? moving.join("、") : "无"}）`,
+    `干支：${yearGanZhi}年　${monthGanZhi}月　${dayGanZhi}日　${hourGanZhi}时（${emptyBranches}空）`,
+    `月建：${$("#monthBranch").value}　日辰：${$("#dayBranch").value}　旬空：${emptyBranches}`,
+    `本卦：${primaryName}（${primaryPalace.palace}宫${primaryPalace.element}｜${primaryPalace.label}${primaryBond ? `｜${primaryBond}` : ""}）`,
+    `变卦：${changedName}（${changedPalace.palace}宫${changedPalace.element}${changedBond ? `｜${changedBond}` : ""}｜动爻：${moving.length ? moving.join("、") : "无"}）`,
+    `世爻：${formatRowText(worldRow, context)}　应爻：${formatRowText(responseRow, context)}`,
+    `伏神：${describeHiddenRows(hiddenRows, context)}`,
+    `动变：${describeMovingLines(primaryRows, changedRows, context)}`,
+    `取用提示：用神需按占问审题另取；本卦例先完整列出排盘结构。`,
     ""
   ];
 
+  lines.push("伏神\t六神\t爻位\t本卦\t爻象\t变卦\t变象\t动变");
   for (let index = 5; index >= 0; index -= 1) {
-    const world = index + 1 === primaryPalace.world ? "世" : "";
-    const response = index + 1 === primaryPalace.response ? "应" : "";
-    const position = `${POSITION_LABELS[index]}${world || response}`;
+    const markers = lineMarkers(index, primaryPalace);
+    const position = `${POSITION_LABELS[index]}${markers.join("")}`;
     const primary = primaryRows[index];
     const changed = changedRows[index];
-    lines.push(`${position}　${spirits[index]}　${primary.family}${primary.branch}${primary.element} ${primary.stem}${primary.branch}　${lineText(state.yaos[index])}　→　${changed.family}${changed.branch}${changed.element} ${changed.stem}${changed.branch}　${lineText(state.yaos[index], true)}`);
+    const hidden = hiddenRows[index];
+    const transform = state.yaos[index] === 6 || state.yaos[index] === 9 ? transformStatusTags(primary, changed, context).join("、") : "";
+    const primaryText = `${formatRowText(primary, context)}${markers.length ? ` ${markers.join("")}` : ""}`;
+    lines.push(`${formatHiddenText(hidden, context)}\t${spirits[index]}\t${position}\t${primaryText}\t${lineText(state.yaos[index])}\t${formatRowText(changed, context)}\t${lineText(state.yaos[index], true)}\t${transform}`);
   }
 
   return lines.join("\n");
@@ -425,8 +635,9 @@ function renderBoard(context) {
   board.innerHTML = "";
 
   const complete = state.yaos.length === 6 && context;
-  const primaryRows = complete ? naJiaRows(context.primaryKey, context.primaryPalace.element) : null;
-  const changedRows = complete ? naJiaRows(context.changedKey, context.primaryPalace.element) : null;
+  const primaryRows = complete ? context.primaryRows : null;
+  const changedRows = complete ? context.changedRows : null;
+  const hiddenRows = complete ? hiddenRowsFor(primaryRows, context.primaryPalace) : null;
   const spirits = SPIRIT_START[$("#dayStem").value];
 
   for (let index = 5; index >= 0; index -= 1) {
@@ -440,16 +651,17 @@ function renderBoard(context) {
     if (!complete) {
       row.innerHTML = `
         <span class="yao-index"><b>${POSITION_LABELS[index]}</b><span>${spirits[index]}</span></span>
+        <div class="hidden-cell"><strong>—</strong><span>待排</span></div>
         <div class="gua-cell"><div class="line-wrap"><span class="${filled ? lineClass(value) : "solid"}"></span><span class="changing">${filled ? changingMark(value) : ""}</span></div><div class="yao-text"><strong>${filled ? yaoName(value) : "待摇"}</strong><span>${filled ? `${value} 点` : "从初爻开始"}</span></div></div>
         <div class="gua-cell"><div class="line-wrap"><span class="${filled ? lineClass(value, true) : "solid"}"></span><span class="changing"></span></div><div class="yao-text"><strong>待排</strong><span>摇满六爻生成</span></div></div>
         <div class="relation"><span class="tag neutral">待排</span></div>
       `;
     } else {
-      const world = index + 1 === context.primaryPalace.world ? "世" : "";
-      const response = index + 1 === context.primaryPalace.response ? "应" : "";
+      const markers = lineMarkers(index, context.primaryPalace);
       row.innerHTML = `
-        <span class="yao-index"><b>${POSITION_LABELS[index]}${world || response}</b><span>${spirits[index]}</span></span>
-        ${renderYaoCell(primaryRows[index], value)}
+        <span class="yao-index"><b>${POSITION_LABELS[index]}${markers.join("")}</b><span>${spirits[index]}</span></span>
+        ${renderHiddenCell(hiddenRows[index])}
+        ${renderYaoCell(primaryRows[index], value, false, markers)}
         ${renderYaoCell(changedRows[index], value, true)}
         ${renderRelations(primaryRows[index].branch)}
       `;
@@ -478,9 +690,15 @@ function saveHistory() {
     question: $("#question").value.trim(),
     yaos: [...state.yaos],
     startedAt: state.startedAt ? state.startedAt.toISOString() : new Date().toISOString(),
+    yearStem: $("#yearStem").value,
+    yearBranch: $("#yearBranch").value,
+    monthStem: $("#monthStem").value,
     monthBranch: $("#monthBranch").value,
     dayBranch: $("#dayBranch").value,
     dayStem: $("#dayStem").value,
+    hourStem: $("#hourStem").value,
+    hourBranch: $("#hourBranch").value,
+    emptyBranches: $("#emptyBranches").value,
     createdAt: new Date().toISOString()
   });
   localStorage.setItem("liuyao-history", JSON.stringify(history.slice(0, 30)));

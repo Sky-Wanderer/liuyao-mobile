@@ -22,10 +22,18 @@
 
         <section class="time-controls" aria-label="排盘时间">
           <label>起卦时间<output id="startTime">未起卦</output></label>
-          <label>月建<output id="monthBranch">待定</output></label>
-          <label>日辰/日干<output id="dayInfo">待定</output></label>
+          <label>年月<output id="yearMonthInfo">待定</output></label>
+          <label>日辰/旬空<output id="dayInfo">待定</output></label>
+          <label>时辰<output id="hourInfo">待定</output></label>
+          <output id="yearStem" hidden>甲</output>
+          <output id="yearBranch" hidden>子</output>
+          <output id="monthStem" hidden>丙</output>
+          <output id="monthBranch" hidden>寅</output>
           <output id="dayBranch" hidden>丑</output>
           <output id="dayStem" hidden>丁</output>
+          <output id="hourStem" hidden>甲</output>
+          <output id="hourBranch" hidden>子</output>
+          <output id="emptyBranches" hidden>子丑</output>
         </section>
 
         <section class="gua-heading">
@@ -34,7 +42,7 @@
         </section>
 
         <section class="gua-board" aria-label="六爻排盘">
-          <div class="board-legend"><span>爻位</span><span>本卦</span><span>变卦</span><span>日月</span></div>
+          <div class="board-legend"><span>爻位</span><span>伏神</span><span>本卦</span><span>变卦</span><span>日月</span></div>
           <div id="yaoBoard"></div>
         </section>
 
